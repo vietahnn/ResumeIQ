@@ -1,0 +1,264 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: resumeiq-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: resumeiq_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d resumeiq_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - resumeiq-network
+
+  redis:
+    image: redis:alpine
+    container_name: resumeiq-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - resumeiq-network
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: resumeiq-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - resumeiq-network
+
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    container_name: resumeiq-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin_password
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - resumeiq-network
+
+  kafka:
+    image: apache/kafka:latest
+    container_name: resumeiq-kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,INTERNAL://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka:29092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - resumeiq-network
+
+# ==============================================================================
+# Application Microservices
+# ==============================================================================
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    container_name: resumeiq-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres_password@postgres:5432/resumeiq_db
+      REDIS_URL: redis://redis:6379/0
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MINIO_ENDPOINT: minio:9000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      minio:
+        condition: service_started
+    networks:
+      - resumeiq-network
+
+  bot:
+    build:
+      context: .
+      dockerfile: services/bot/Dockerfile
+    container_name: resumeiq-bot
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres_password@postgres:5432/resumeiq_db
+      REDIS_URL: redis://redis:6379/0
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      QDRANT_HOST: qdrant
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      qdrant:
+        condition: service_started
+    networks:
+      - resumeiq-network
+
+  worker:
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    container_name: resumeiq-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres_password@postgres:5432/resumeiq_db
+      REDIS_URL: redis://redis:6379/0
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      QDRANT_HOST: qdrant
+      MINIO_ENDPOINT: minio:9000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      qdrant:
+        condition: service_started
+      minio:
+        condition: service_started
+    networks:
+      - resumeiq-network
+
+  frontend:
+    build:
+      context: ./webapp
+      dockerfile: Dockerfile
+    container_name: resumeiq-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"                    
+    environment:
+      NEXT_PUBLIC_API_BASE: http://localhost
+      NEXT_PUBLIC_BOT_HTTP_BASE: http://localhost
+      NEXT_PUBLIC_BOT_WS_BASE: ws://localhost
+    depends_on:
+      - api
+      - bot
+    networks:
+      - resumeiq-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: resumeiq-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend
+      - api
+      - bot
+    networks:
+      - resumeiq-network
+
+  # ==============================================================================
+  # Observability & Monitoring Infrastructure
+  # ==============================================================================
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: resumeiq-cadvisor
+    restart: unless-stopped
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    ports:
+      - "8080:8080"
+    networks:
+      - resumeiq-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: resumeiq-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - resumeiq-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: resumeiq-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - resumeiq-network
+
+networks:
+  resumeiq-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  minio_data:
+  kafka_data:
+  prometheus_data:
+  grafana_data:

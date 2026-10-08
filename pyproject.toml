@@ -1,0 +1,29 @@
+[project]
+name = "resumeiq"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "asyncpg>=0.29.0",
+    "confluent-kafka>=2.4.0",
+    "fastapi>=0.111.0",
+    "greenlet>=3.0.3",
+    "langchain>=0.2.0",
+    "langchain-core>=0.2.0",
+    "langchain-groq>=0.1.9",
+    "langfuse>=2.0.0",
+    "minio>=7.2.5",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.2.0",
+    "pypdf>=4.2.0",
+    "python-docx>=1.1.2",
+    "python-dotenv>=1.0.1",
+    "python-multipart>=0.0.9",
+    "qdrant-client>=1.9.0",
+    "redis>=5.0.3",
+    "sentence-transformers>=3.0.0",
+    "sqlalchemy[asyncio]>=2.0.29",
+    "tavily-python>=0.5.0",
+    "uvicorn[standard]>=0.29.0",
+]

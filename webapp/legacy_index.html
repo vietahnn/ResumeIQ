@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ResumeIQ — AI Career Platform & Multi-Agent Engine</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+              900: '#1e1b4b'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom scrollbar and markdown styling */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    .prose h3 { font-size: 1.15rem; font-weight: 700; margin-top: 0.75rem; margin-bottom: 0.4rem; color: #818cf8; }
+    .prose h4 { font-size: 1rem; font-weight: 600; margin-top: 0.6rem; margin-bottom: 0.3rem; color: #a5b4fc; }
+    .prose p { margin-bottom: 0.5rem; line-height: 1.5; color: #e2e8f0; }
+    .prose ul { list-style-type: disc; margin-left: 1.25rem; margin-bottom: 0.5rem; color: #cbd5e1; }
+    .prose li { margin-bottom: 0.2rem; }
+    .prose strong { color: #f8fafc; }
+    .prose code { background: #1e293b; padding: 0.15rem 0.35rem; border-radius: 0.25rem; color: #38bdf8; font-size: 0.9em; }
+    @keyframes pulse-slow { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .animate-pulse-slow { animation: pulse-slow 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    #sessions-sidebar.collapsed { margin-left: -18rem; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+
+  <!-- Top Navigation Header -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50 px-6 py-3.5 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <button onclick="toggleSessionsSidebar()" title="Đóng/Mở Sidebar (Ctrl+B)" class="h-9 w-9 rounded-xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700 flex items-center justify-center text-slate-300 hover:text-white transition">
+        <i data-lucide="panel-left" class="w-4 h-4"></i>
+      </button>
+
+      <div class="h-9 w-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+        <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-lg leading-tight tracking-tight text-white flex items-center gap-2">
+          ResumeIQ
+          <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">Multi-Agent RAG</span>
+        </h1>
+        <p class="text-xs text-slate-400">Powered by Groq 120B MoE, Qdrant Vector & Kafka KRaft</p>
+      </div>
+    </div>
+
+    <!-- System Connectivity Badges -->
+    <div class="flex items-center gap-3 text-xs">
+      <div id="backend-status" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+        <span class="h-2 w-2 rounded-full bg-amber-400 animate-ping"></span>
+        <span>Checking API...</span>
+      </div>
+      <div id="ws-status" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+        <span class="h-2 w-2 rounded-full bg-slate-500"></span>
+        <span>WebSocket: Disconnected</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- App Workspace Container (Sidebar + Main Workspace) -->
+  <div class="flex-1 flex overflow-hidden">
+
+    <!-- Sessions History Sidebar (ChatGPT / Gemini style) -->
+    <aside id="sessions-sidebar" class="w-72 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 transition-all duration-300 ease-in-out">
+      
+      <!-- Top Action: + New Chat Button -->
+      <div class="p-3.5 border-b border-slate-800">
+        <button onclick="startNewChat()" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs shadow-md shadow-indigo-600/20 transition-all group">
+          <i data-lucide="plus" class="w-4 h-4 group-hover:rotate-90 transition-transform"></i>
+          <span>Cuộc trò chuyện mới</span>
+        </button>
+      </div>
+
+      <!-- History Header -->
+      <div class="px-4 py-2.5 flex items-center justify-between text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
+        <span class="flex items-center gap-1.5">
+          <i data-lucide="history" class="w-3.5 h-3.5 text-indigo-400"></i>
+          <span>Lịch sử chat</span>
+        </span>
+        <button onclick="fetchSessions()" title="Làm mới lịch sử" class="p-1 rounded hover:bg-slate-800 hover:text-slate-200 transition">
+          <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+        </button>
+      </div>
+
+      <!-- Scrollable Sessions List -->
+      <div id="sessions-list" class="flex-1 overflow-y-auto px-2 py-1 space-y-1">
+        <div class="text-center py-8 text-slate-500 text-xs">Đang tải lịch sử...</div>
+      </div>
+
+      <!-- Sidebar Footer -->
+      <div class="p-3 border-t border-slate-800 text-[11px] text-slate-500 flex items-center justify-between bg-slate-950/40">
+        <span id="session-count-label">0 cuộc trò chuyện</span>
+        <span class="text-indigo-400/80 font-mono text-[10px]" id="current-session-label"></span>
+      </div>
+    </aside>
+
+    <!-- Main Content 2-Column Grid -->
+    <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 max-w-[1700px] w-full mx-auto overflow-hidden">
+
+    <!-- LEFT COLUMN: Resumes & JD Context (5 Cols) -->
+    <div class="lg:col-span-5 flex flex-col gap-5 overflow-y-auto pr-1">
+
+      <!-- 1. Drag & Drop Upload Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold text-sm uppercase tracking-wider text-slate-300 flex items-center gap-2">
+            <i data-lucide="upload-cloud" class="w-4 h-4 text-indigo-400"></i>
+            Upload Resume (Claim-Check)
+          </h2>
+          <span class="text-xs text-slate-500">PDF, DOCX (Max 10MB)</span>
+        </div>
+
+        <div id="dropzone" class="border-2 border-dashed border-slate-700 hover:border-indigo-500/80 bg-slate-950/60 hover:bg-slate-950 transition-all rounded-xl p-6 text-center cursor-pointer flex flex-col items-center justify-center gap-2 group">
+          <input type="file" id="file-input" class="hidden" accept=".pdf,.docx">
+          <div class="h-10 w-10 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+            <i data-lucide="file-up" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <p class="text-sm font-medium text-slate-200">Click to browse or drop resume here</p>
+            <p class="text-xs text-slate-500 mt-0.5">Dispatches Kafka event and triggers async Worker parsing</p>
+          </div>
+        </div>
+
+        <div id="upload-progress" class="hidden mt-3 text-xs flex items-center justify-between text-indigo-400">
+          <span id="upload-status-text">Uploading to MinIO...</span>
+          <span class="animate-spin"><i data-lucide="loader-2" class="w-4 h-4"></i></span>
+        </div>
+      </div>
+
+      <!-- 2. Resumes List Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm flex-1 flex flex-col min-h-[220px]">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold text-sm uppercase tracking-wider text-slate-300 flex items-center gap-2">
+            <i data-lucide="files" class="w-4 h-4 text-indigo-400"></i>
+            Uploaded Resumes
+          </h2>
+          <button onclick="fetchResumes()" class="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 hover:underline">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Refresh
+          </button>
+        </div>
+
+        <div id="resumes-list" class="space-y-2 overflow-y-auto flex-1 max-h-[240px]">
+          <div class="text-center py-6 text-slate-500 text-xs">Loading resumes...</div>
+        </div>
+      </div>
+
+      <!-- 3. Job Description (JD) Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="font-semibold text-sm uppercase tracking-wider text-slate-300 flex items-center gap-2">
+            <i data-lucide="briefcase" class="w-4 h-4 text-indigo-400"></i>
+            Target Job Description (JD)
+          </h2>
+          <span class="text-xs text-slate-500">Optional for Matching</span>
+        </div>
+        <textarea id="jd-input" rows="4" placeholder="Paste target Job Description here to calculate semantic match score and identify skill gaps..." class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors resize-none"></textarea>
+      </div>
+
+    </div>
+
+    <!-- RIGHT COLUMN: Real-Time Multi-Agent Chat (7 Cols) -->
+    <div class="lg:col-span-7 flex flex-col bg-slate-900 border border-slate-800 rounded-2xl shadow-sm overflow-hidden h-[calc(100vh-6.5rem)]">
+
+      <!-- Chat Header & Active Agent Banner -->
+      <div class="px-5 py-3.5 border-b border-slate-800 bg-slate-900/90 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="h-8 w-8 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center">
+            <i data-lucide="bot" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="font-semibold text-sm text-white">Career AI Assistant</h3>
+              <span id="chat-session-badge" class="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-800 text-indigo-300 border border-slate-700">New Session</span>
+            </div>
+            <p id="active-resume-label" class="text-xs text-slate-400">No active resume selected</p>
+          </div>
+        </div>
+
+        <!-- Dynamic Agent Status Banner -->
+        <div id="agent-status-badge" class="hidden items-center gap-2 px-3 py-1 rounded-full bg-indigo-950/80 border border-indigo-700/50 text-indigo-300 text-xs">
+          <span class="h-2 w-2 rounded-full bg-indigo-400 animate-ping"></span>
+          <span id="agent-status-text" class="font-medium">Supervisor thinking...</span>
+        </div>
+      </div>
+
+      <!-- Chat Messages Container -->
+      <div id="chat-messages" class="flex-1 overflow-y-auto p-5 space-y-4">
+        <!-- Initial Welcome Message -->
+        <div class="flex items-start gap-3">
+          <div class="h-7 w-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">AI</div>
+          <div class="bg-slate-800/70 border border-slate-700/60 rounded-2xl rounded-tl-sm px-4 py-3 text-xs text-slate-200 max-w-[85%] prose leading-relaxed">
+            <p>Xin chào! Tôi là <strong>ResumeIQ Multi-Agent</strong>. Bạn có thể chọn một CV đã tải lên ở cột bên trái và đặt bất kỳ câu hỏi nào:</p>
+            <ul>
+              <li><strong>Thẩm định CV & ATS:</strong> Chấm điểm ATS, công thức STAR và phát hiện điểm yếu.</li>
+              <li><strong>So khớp JD:</strong> Dán Job Description để tính % độ phù hợp và phân tích Skill Gap.</li>
+              <li><strong>Lộ trình sự nghiệp:</strong> Xây dựng kế hoạch thăng tiến và chuẩn bị câu hỏi phỏng vấn kỹ thuật.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Action Chips -->
+      <div class="px-5 py-2 border-t border-slate-800/80 bg-slate-950/40 flex items-center gap-2 overflow-x-auto">
+        <button onclick="sendQuickPrompt('Review my CV, check ATS compatibility, and highlight critical areas for improvement')" class="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center gap-1.5">
+          <i data-lucide="file-search" class="w-3.5 h-3.5 text-indigo-400"></i> Review CV & ATS
+        </button>
+        <button onclick="sendQuickPrompt('Evaluate my resume fit against the provided Job Description and show my skill gaps')" class="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center gap-1.5">
+          <i data-lucide="target" class="w-3.5 h-3.5 text-emerald-400"></i> Match với JD
+        </button>
+        <button onclick="sendQuickPrompt('Create a strategic career advancement roadmap and 3 high-yield technical mock interview questions')" class="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center gap-1.5">
+          <i data-lucide="map" class="w-3.5 h-3.5 text-amber-400"></i> Lộ trình & Phỏng vấn
+        </button>
+      </div>
+
+      <!-- Chat Input Area -->
+      <div class="p-4 border-t border-slate-800 bg-slate-900/90">
+        <form id="chat-form" onsubmit="handleSendMessage(event)" class="flex items-center gap-2">
+          <input type="text" id="chat-input" placeholder="Type your request (e.g. 'How can I optimize bullet points for TMA experience?')..." class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors" autocomplete="off">
+          <button type="submit" id="send-button" class="h-10 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs flex items-center gap-1.5 transition-all shadow-md shadow-indigo-600/20 disabled:opacity-50 disabled:cursor-not-allowed">
+            <span>Send</span>
+            <i data-lucide="send" class="w-3.5 h-3.5"></i>
+          </button>
+        </form>
+      </div>
+
+    </div>
+
+  </main>
+
+  </div>
+
+  <script>
+    const API_BASE = window.location.origin.includes(":8000") ? window.location.origin : "http://localhost:8000";
+    const BOT_HTTP_BASE = `http://${window.location.hostname || "localhost"}:8001`;
+    const BOT_WS_BASE = `ws://${window.location.hostname || "localhost"}:8001`;
+
+    let selectedResumeId = null;
+    let allResumes = [];
+    let allSessions = [];
+    let socket = null;
+    let sessionId = "session_" + Math.random().toString(36).substring(2, 9);
+    let currentAiBubble = null;
+    let currentRawTokens = "";
+    let isSidebarOpen = true;
+
+    // 1. Initialize and Check Health
+    async function init() {
+      lucide.createIcons();
+      await checkBackendHealth();
+      await fetchResumes();
+      await fetchSessions();
+      initWebSocket();
+      setupDropzone();
+      setupKeyboardShortcuts();
+    }
+
+    async function checkBackendHealth() {
+      try {
+        const res = await fetch(`${API_BASE}/health`);
+        const data = await res.json();
+        const badge = document.getElementById("backend-status");
+        if (data.status === "healthy") {
+          badge.innerHTML = `<span class="h-2 w-2 rounded-full bg-emerald-400"></span><span>API Healthy</span>`;
+          badge.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/50 border border-emerald-800 text-emerald-300 text-xs";
+        }
+      } catch (err) {
+        const badge = document.getElementById("backend-status");
+        badge.innerHTML = `<span class="h-2 w-2 rounded-full bg-rose-500"></span><span>API Offline</span>`;
+        badge.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-950/50 border border-rose-800 text-rose-300 text-xs";
+      }
+    }
+
+    // 2. Chat Sessions Management (ChatGPT / Gemini style)
+    function toggleSessionsSidebar() {
+      const sidebar = document.getElementById("sessions-sidebar");
+      isSidebarOpen = !isSidebarOpen;
+      if (isSidebarOpen) {
+        sidebar.classList.remove("collapsed");
+      } else {
+        sidebar.classList.add("collapsed");
+      }
+    }
+
+    async function fetchSessions() {
+      const listEl = document.getElementById("sessions-list");
+      try {
+        const res = await fetch(`${BOT_HTTP_BASE}/api/v1/chat/sessions`);
+        allSessions = await res.json();
+        renderSessionsList();
+      } catch (err) {
+        listEl.innerHTML = `<div class="text-center py-6 text-rose-400 text-xs">Không thể tải lịch sử phiên.</div>`;
+      }
+    }
+
+    function renderSessionsList() {
+      const listEl = document.getElementById("sessions-list");
+      const countLabel = document.getElementById("session-count-label");
+      const currentLabel = document.getElementById("current-session-label");
+      const badge = document.getElementById("chat-session-badge");
+
+      if (countLabel) countLabel.innerText = `${allSessions.length} cuộc trò chuyện`;
+      if (currentLabel) currentLabel.innerText = sessionId.substring(0, 15);
+      if (badge) badge.innerText = sessionId.substring(0, 15);
+
+      if (!Array.isArray(allSessions) || allSessions.length === 0) {
+        listEl.innerHTML = `<div class="text-center py-8 text-slate-500 text-xs">Chưa có cuộc trò chuyện nào.<br>Nhắn tin để bắt đầu lưu.</div>`;
+        return;
+      }
+
+      listEl.innerHTML = allSessions.map(s => {
+        const isCurrent = s.session_id === sessionId;
+        const timeFormatted = formatSessionDate(s.last_active_at);
+
+        return `
+          <div onclick="selectSession('${s.session_id}')" class="group p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${isCurrent ? 'bg-indigo-950/60 border-indigo-500/70 text-white shadow-sm' : 'bg-slate-950/40 border-transparent hover:border-slate-800 hover:bg-slate-800/60 text-slate-300'}">
+            <div class="flex items-center gap-2.5 overflow-hidden flex-1 min-w-0">
+              <i data-lucide="message-square" class="w-3.5 h-3.5 ${isCurrent ? 'text-indigo-400' : 'text-slate-500 group-hover:text-slate-300'} shrink-0"></i>
+              <div class="overflow-hidden flex-1 min-w-0 pr-1">
+                <p class="text-xs font-medium truncate ${isCurrent ? 'text-indigo-200' : 'text-slate-200'}">${escapeHtml(s.title)}</p>
+                <p class="text-[10px] text-slate-500 truncate mt-0.5">${s.message_count} tin nhắn • ${timeFormatted}</p>
+              </div>
+            </div>
+            <button onclick="deleteSession(event, '${s.session_id}')" title="Xóa phiên này" class="opacity-0 group-hover:opacity-100 hover:text-rose-400 p-1 rounded transition text-slate-500 hover:bg-slate-700/50 shrink-0">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        `;
+      }).join("");
+
+      lucide.createIcons();
+    }
+
+    function startNewChat() {
+      if (socket) {
+        socket.onclose = null;
+        socket.close();
+      }
+
+      sessionId = "session_" + Math.random().toString(36).substring(2, 9);
+      renderSessionsList();
+      resetChatToWelcome();
+      initWebSocket();
+
+      const input = document.getElementById("chat-input");
+      if (input) input.focus();
+    }
+
+    function resetChatToWelcome() {
+      const container = document.getElementById("chat-messages");
+      container.innerHTML = `
+        <div class="flex items-start gap-3">
+          <div class="h-7 w-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">AI</div>
+          <div class="bg-slate-800/70 border border-slate-700/60 rounded-2xl rounded-tl-sm px-4 py-3 text-xs text-slate-200 max-w-[85%] prose leading-relaxed">
+            <p>Xin chào! Tôi là <strong>ResumeIQ Multi-Agent</strong>. Bạn có thể chọn một CV đã tải lên ở cột bên trái và đặt bất kỳ câu hỏi nào:</p>
+            <ul>
+              <li><strong>Thẩm định CV & ATS:</strong> Chấm điểm ATS, công thức STAR và phát hiện điểm yếu.</li>
+              <li><strong>So khớp JD:</strong> Dán Job Description để tính % độ phù hợp và phân tích Skill Gap.</li>
+              <li><strong>Lộ trình sự nghiệp:</strong> Xây dựng kế hoạch thăng tiến và chuẩn bị câu hỏi phỏng vấn kỹ thuật.</li>
+            </ul>
+          </div>
+        </div>
+      `;
+    }
+
+    async function selectSession(targetSessionId) {
+      if (targetSessionId === sessionId) return;
+
+      if (socket) {
+        socket.onclose = null;
+        socket.close();
+      }
+
+      sessionId = targetSessionId;
+      renderSessionsList();
+      initWebSocket();
+      await loadChatHistory(sessionId);
+    }
+
+    async function loadChatHistory(sId) {
+      const container = document.getElementById("chat-messages");
+      container.innerHTML = `
+        <div class="flex items-center justify-center py-16 text-slate-400 text-xs gap-2">
+          <i data-lucide="loader-2" class="w-4 h-4 animate-spin text-indigo-400"></i>
+          <span>Đang tải lịch sử cuộc trò chuyện...</span>
+        </div>
+      `;
+      lucide.createIcons();
+
+      try {
+        const res = await fetch(`${BOT_HTTP_BASE}/api/v1/chat/history/${sId}`);
+        const messages = await res.json();
+
+        if (!Array.isArray(messages) || messages.length === 0) {
+          resetChatToWelcome();
+          return;
+        }
+
+        container.innerHTML = "";
+        let sessionResumeId = null;
+
+        for (const msg of messages) {
+          if (msg.role === "user") {
+            createUserMessageBubble(msg.content);
+          } else {
+            const bubble = createAiMessageBubble();
+            bubble.innerHTML = marked.parse(msg.content);
+          }
+          if (msg.extra_metadata && msg.extra_metadata.resume_id) {
+            sessionResumeId = msg.extra_metadata.resume_id;
+          }
+        }
+
+        if (sessionResumeId && sessionResumeId !== selectedResumeId) {
+          selectResumeSilently(sessionResumeId);
+        }
+
+        scrollChatToBottom();
+      } catch (err) {
+        container.innerHTML = `
+          <div class="text-center py-8 text-rose-400 text-xs">
+            Không thể tải lịch sử phiên chat: ${err.message}
+          </div>
+        `;
+      }
+    }
+
+    async function deleteSession(event, sId) {
+      if (event) event.stopPropagation();
+
+      if (!confirm("Bạn có chắc chắn muốn xóa cuộc trò chuyện này?")) {
+        return;
+      }
+
+      try {
+        const res = await fetch(`${BOT_HTTP_BASE}/api/v1/chat/sessions/${sId}`, {
+          method: "DELETE"
+        });
+        if (res.ok) {
+          if (sessionId === sId) {
+            startNewChat();
+          }
+          await fetchSessions();
+        } else {
+          alert("Không thể xóa cuộc trò chuyện");
+        }
+      } catch (err) {
+        alert("Lỗi khi xóa phiên: " + err.message);
+      }
+    }
+
+    function selectResumeSilently(id) {
+      selectedResumeId = id;
+      const resume = allResumes.find(r => r.id === id);
+      if (resume) {
+        document.getElementById("active-resume-label").innerHTML = `Active Context: <span class="text-indigo-400 font-medium">${resume.file_name}</span>`;
+      }
+      renderResumesList();
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function formatSessionDate(isoStr) {
+      if (!isoStr) return "";
+      try {
+        const d = new Date(isoStr);
+        const now = new Date();
+        const isToday = d.toDateString() === now.toDateString();
+        if (isToday) {
+          return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        return d.toLocaleDateString([], { month: 'numeric', day: 'numeric' });
+      } catch (e) {
+        return "";
+      }
+    }
+
+    function setupKeyboardShortcuts() {
+      document.addEventListener("keydown", (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+          e.preventDefault();
+          toggleSessionsSidebar();
+        }
+      });
+    }
+
+    // 3. Resumes List & Selection
+    async function fetchResumes() {
+      const listEl = document.getElementById("resumes-list");
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/resumes/?limit=20`);
+        allResumes = await res.json();
+        renderResumesList();
+
+        // Auto-select latest completed if none selected
+        if (!selectedResumeId && allResumes.length > 0) {
+          selectResume(allResumes[0].id, allResumes[0].file_name);
+        }
+      } catch (err) {
+        listEl.innerHTML = `<div class="text-center py-4 text-rose-400 text-xs">Failed to load resumes.</div>`;
+      }
+    }
+
+    function renderResumesList() {
+      const listEl = document.getElementById("resumes-list");
+      if (!Array.isArray(allResumes) || allResumes.length === 0) {
+        listEl.innerHTML = `<div class="text-center py-6 text-slate-500 text-xs">No resumes uploaded yet. Upload a CV above to get started.</div>`;
+        return;
+      }
+
+      listEl.innerHTML = allResumes.map(r => {
+        const isSelected = r.id === selectedResumeId;
+        const statusColors = {
+          COMPLETED: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+          PROCESSING: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+          PENDING: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+          FAILED: "bg-rose-500/10 text-rose-400 border-rose-500/20"
+        };
+        const badgeClass = statusColors[r.status] || "bg-slate-800 text-slate-400";
+        const skillsCount = r.parsed_data && r.parsed_data.skills ? r.parsed_data.skills.length : 0;
+
+        return `
+          <div onclick="selectResume('${r.id}', '${r.file_name}')" class="p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${isSelected ? 'bg-indigo-950/50 border-indigo-500/80 shadow-sm' : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'}">
+            <div class="flex items-center gap-3 overflow-hidden">
+              <i data-lucide="file-text" class="w-4 h-4 ${isSelected ? 'text-indigo-400' : 'text-slate-500'} shrink-0"></i>
+              <div class="overflow-hidden">
+                <p class="text-xs font-medium text-slate-200 truncate">${r.file_name}</p>
+                <p class="text-[11px] text-slate-500">${skillsCount} skills extracted • ${new Date(r.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+              </div>
+            </div>
+            <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full border ${badgeClass} shrink-0">${r.status}</span>
+          </div>
+        `;
+      }).join("");
+
+      lucide.createIcons();
+    }
+
+    function selectResume(id, name) {
+      selectedResumeId = id;
+      document.getElementById("active-resume-label").innerHTML = `Active Context: <span class="text-indigo-400 font-medium">${name}</span>`;
+      renderResumesList();
+    }
+
+    // 3. File Upload
+    function setupDropzone() {
+      const dropzone = document.getElementById("dropzone");
+      const fileInput = document.getElementById("file-input");
+
+      dropzone.addEventListener("click", () => fileInput.click());
+      dropzone.addEventListener("dragover", (e) => { e.preventDefault(); dropzone.classList.add("border-indigo-500"); });
+      dropzone.addEventListener("dragleave", () => dropzone.classList.remove("border-indigo-500"));
+      dropzone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropzone.classList.remove("border-indigo-500");
+        if (e.dataTransfer.files.length > 0) handleFileUpload(e.dataTransfer.files[0]);
+      });
+      fileInput.addEventListener("change", () => {
+        if (fileInput.files.length > 0) handleFileUpload(fileInput.files[0]);
+      });
+    }
+
+    async function handleFileUpload(file) {
+      const progress = document.getElementById("upload-progress");
+      const progressText = document.getElementById("upload-status-text");
+      progress.classList.remove("hidden");
+      progressText.innerText = `Uploading '${file.name}' to MinIO & Kafka...`;
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/resumes/upload`, {
+          method: "POST",
+          body: formData
+        });
+        const data = await res.json();
+        if (res.ok) {
+          progressText.innerText = "Upload complete! Worker is parsing...";
+          setTimeout(async () => {
+            progress.classList.add("hidden");
+            await fetchResumes();
+            selectResume(data.id, data.file_name);
+          }, 1200);
+        } else {
+          progressText.innerText = `Upload failed: ${data.detail || 'Error'}`;
+        }
+      } catch (err) {
+        progressText.innerText = `Error: ${err.message}`;
+      }
+    }
+
+    // 4. WebSocket Client & Streaming
+    function initWebSocket() {
+      const wsUrl = `${BOT_WS_BASE}/ws/chat/${sessionId}`;
+      socket = new WebSocket(wsUrl);
+
+      const statusBadge = document.getElementById("ws-status");
+
+      socket.onopen = () => {
+        statusBadge.innerHTML = `<span class="h-2 w-2 rounded-full bg-emerald-400"></span><span>Bot WebSocket (8001): Connected</span>`;
+        statusBadge.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/50 border border-emerald-800 text-emerald-300 text-xs";
+      };
+
+      socket.onclose = () => {
+        statusBadge.innerHTML = `<span class="h-2 w-2 rounded-full bg-slate-500"></span><span>Bot WebSocket: Reconnecting...</span>`;
+        statusBadge.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-300 text-xs";
+        setTimeout(initWebSocket, 2000);
+      };
+
+      socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        handleSocketEvent(data);
+      };
+    }
+
+    function handleSocketEvent(data) {
+      const badge = document.getElementById("agent-status-badge");
+      const badgeText = document.getElementById("agent-status-text");
+
+      if (data.type === "status") {
+        if (data.status === "SUCCESS") {
+          badge.classList.add("hidden");
+          badge.classList.remove("flex");
+          const bubble = createAiMessageBubble();
+          let headerBadge = "";
+          if (data.metadata && data.metadata.source === "cache") {
+            headerBadge = `<div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[11px] mb-2 font-medium"><i data-lucide="zap" class="w-3 h-3"></i> Phản hồi từ Redis Cache (~5ms)</div>`;
+          }
+          bubble.innerHTML = headerBadge + marked.parse(data.content);
+          scrollChatToBottom();
+          document.getElementById("send-button").disabled = false;
+          fetchSessions();
+          lucide.createIcons();
+        } else if (data.status === "FAILED") {
+          badge.classList.add("hidden");
+          badge.classList.remove("flex");
+          createErrorMessageBubble(data.content);
+          document.getElementById("send-button").disabled = false;
+        } else {
+          badge.classList.remove("hidden");
+          badge.classList.add("flex");
+          const taskLabel = data.task_type || "WORKER";
+          badgeText.innerText = `[${taskLabel}] ${data.message || data.content || "Đang xử lý..."}`;
+        }
+      } else if (data.type === "stream_start") {
+        currentAiBubble = createAiMessageBubble();
+        currentRawTokens = "";
+        scrollChatToBottom();
+      } else if (data.type === "chunk") {
+        if (!currentAiBubble) {
+          currentAiBubble = createAiMessageBubble();
+          currentRawTokens = "";
+        }
+        currentRawTokens += data.content;
+        currentAiBubble.innerHTML = marked.parse(currentRawTokens);
+        scrollChatToBottom();
+      } else if (data.type === "stream_end" || data.type === "done") {
+        badge.classList.add("hidden");
+        badge.classList.remove("flex");
+        currentAiBubble = null;
+        currentRawTokens = "";
+        document.getElementById("send-button").disabled = false;
+        fetchSessions();
+      } else if (data.type === "error") {
+        badge.classList.add("hidden");
+        badge.classList.remove("flex");
+        createErrorMessageBubble(data.content || "Đã xảy ra lỗi");
+        document.getElementById("send-button").disabled = false;
+      }
+    }
+
+    function handleSendMessage(e) {
+      if (e) e.preventDefault();
+      const input = document.getElementById("chat-input");
+      const text = input.value.trim();
+      if (!text || !socket || socket.readyState !== WebSocket.OPEN) return;
+
+      const jd = document.getElementById("jd-input").value.trim();
+
+      // Render user bubble
+      createUserMessageBubble(text);
+      input.value = "";
+      document.getElementById("send-button").disabled = true;
+
+      // Dispatch payload to Bot Agent
+      socket.send(JSON.stringify({
+        query: text,
+        resume_id: selectedResumeId,
+        target_jd: jd || null
+      }));
+
+      scrollChatToBottom();
+      setTimeout(fetchSessions, 600);
+    }
+
+    function sendQuickPrompt(promptText) {
+      document.getElementById("chat-input").value = promptText;
+      handleSendMessage(null);
+    }
+
+    function createUserMessageBubble(text) {
+      const container = document.getElementById("chat-messages");
+      const div = document.createElement("div");
+      div.className = "flex items-start justify-end gap-3";
+      div.innerHTML = `
+        <div class="bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 text-xs max-w-[80%] shadow-sm">
+          ${text}
+        </div>
+        <div class="h-7 w-7 rounded-lg bg-slate-700 text-slate-200 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">U</div>
+      `;
+      container.appendChild(div);
+    }
+
+    function createAiMessageBubble() {
+      const container = document.getElementById("chat-messages");
+      const div = document.createElement("div");
+      div.className = "flex items-start gap-3";
+      const bubble = document.createElement("div");
+      bubble.className = "bg-slate-800/80 border border-slate-700/60 rounded-2xl rounded-tl-sm px-4 py-3 text-xs text-slate-200 max-w-[85%] prose leading-relaxed shadow-sm";
+      bubble.innerHTML = "<span class='text-slate-400 animate-pulse'>Thinking...</span>";
+
+      div.innerHTML = `<div class="h-7 w-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">AI</div>`;
+      div.appendChild(bubble);
+      container.appendChild(div);
+      return bubble;
+    }
+
+    function createErrorMessageBubble(errorText) {
+      const container = document.getElementById("chat-messages");
+      const div = document.createElement("div");
+      div.className = "flex items-start gap-3";
+      div.innerHTML = `
+        <div class="h-7 w-7 rounded-lg bg-rose-600 text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">!</div>
+        <div class="bg-rose-950/60 border border-rose-800 text-rose-300 rounded-2xl rounded-tl-sm px-4 py-2.5 text-xs max-w-[85%]">
+          ${errorText}
+        </div>
+      `;
+      container.appendChild(div);
+      scrollChatToBottom();
+    }
+
+    function scrollChatToBottom() {
+      const c = document.getElementById("chat-messages");
+      c.scrollTop = c.scrollHeight;
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>
